@@ -1,34 +1,83 @@
+"""
+TCP Client Module for interacting with a TCP server to classify Iris flower data.
+
+This module provides a command-line client that connects to a server, sends commands, and receives responses. The client supports commands to input data, classify it, retrieve results, and control the server connection.
+
+Classes:
+    TCPClient: Main class representing the TCP client, handling user commands and managing the server connection.
+
+Modules:
+    socket: Provides access to network sockets for communication between client and server.
+    sys: Provides system-specific parameters and functions, used here for handling the main entry point.
+
+Constants:
+    VARIABLE_RANGES (dict): Acceptable ranges for each Iris flower variable, imported from the client module.
+
+Classes:
+    TCPClient: Represents a TCP client that connects to the server, sends commands, and receives responses.
+
+"""
+
 import socket
 import sys
 
-# Define acceptable ranges for input variables
-VARIABLE_RANGES = {
-    "sepalLength": (4.3, 7.9),
-    "sepalWidth": (2.0, 4.4),
-    "petalLength": (1.0, 6.9),
-    "petalWidth": (0.1, 2.5),
-}
+from server import VARIABLE_RANGES
 
 
 class TCPClient:
+    """
+    Represents a TCP client for connecting to a server, managing user commands, and handling server responses.
+
+    Attributes:
+        clientSocket (socket.socket): The socket instance used for client-server communication.
+        portNum (int): The port number for the connection, defaulting to 5991.
+
+    Methods:
+        handleInputError(text): Prints an error message for invalid user input.
+        handleServerError(sStatus): Prints an error message for errors returned by the server.
+        handleOpen(command): Establishes a connection to the server at a specified address.
+        handleClose(): Closes the current connection with the server.
+        handleInput(command): Sends an input command to the server.
+        handleClear(): Clears the stored inputs and outputs on the server.
+        handleClassify(): Requests classification of the current inputs from the server.
+        handleShutdown(): Sends a shutdown command to the server.
+        handleQuit(): Closes the client connection and exits.
+        mainFunction(): Main loop to interact with the user and manage commands.
+    """
+
     def __init__(self):
         self.clientSocket = None  # Initialize the client socket
         self.portNum = 5991  # Default port number for connection
 
-    # Function to handle and display input errors
     def handleInputError(self, text="Text cannot be empty. Please enter a valid Text."):
+        """
+        Displays an error message for invalid user input.
+
+        Parameters:
+            text (str): The error message to display.
+        """
         print("\n*****************************************************************")
         print(f"* Error: {text} *")
         print("*****************************************************************")
 
-    # Function to handle and display server errors
     def handleServerError(self, sStatus):
+        """
+        Displays an error message returned by the server.
+
+        Parameters:
+            sStatus (str): The error message received from the server.
+        """
         print("\n***************************************")
         print(f"* ERROR: {sStatus} *")
         print("***************************************")
 
-    # Function to establish a connection to the server with a given address
     def handleOpen(self, command):
+        """
+        Establishes a connection to the server at the specified address.
+
+        Parameters:
+            command (str): Command string containing the server address.
+        """
         try:
             _, address = command.split(maxsplit=1)  # Parse address from the command
         except ValueError:
@@ -38,7 +87,6 @@ class TCPClient:
             return
 
         try:
-            # Create socket and attempt to connect to server
             self.clientSocket = socket.socket()
             print(f"Trying to connect to host {address} on port {self.portNum}")
             self.clientSocket.connect((address, self.portNum))
@@ -49,8 +97,10 @@ class TCPClient:
             print(f"Failed to connect to {address} with error: {err}")
             self.clientSocket = None
 
-    # Function to close the current connection
     def handleClose(self):
+        """
+        Closes the current connection with the server.
+        """
         if self.clientSocket:
             self.clientSocket.send("close".encode())  # Send close command to server
             sStatus = self.clientSocket.recv(1024).decode()  # Receive server response
@@ -62,8 +112,13 @@ class TCPClient:
         else:
             print("No active connection to close.")
 
-    # Function to send an input command to the server
     def handleInput(self, command):
+        """
+        Sends an input command to the server, expecting a response.
+
+        Parameters:
+            command (str): The input command, including the variable name and value.
+        """
         if self.clientSocket:
             self.clientSocket.send(command.encode())  # Send input command to server
             sStatus = self.clientSocket.recv(1024).decode()  # Receive server response
@@ -73,8 +128,10 @@ class TCPClient:
                 "No active connection. Please use 'open <address>' to connect."
             )
 
-    # Function to clear stored inputs and outputs on the server
     def handleClear(self):
+        """
+        Sends a command to clear stored inputs and outputs on the server.
+        """
         if self.clientSocket:
             self.clientSocket.send("clear".encode())  # Send clear command to server
             sStatus = self.clientSocket.recv(1024).decode()  # Receive server response
@@ -84,8 +141,10 @@ class TCPClient:
                 "No active connection. Please use 'open <address>' to connect."
             )
 
-    # Function to classify the current inputs stored on the server
     def handleClassify(self):
+        """
+        Requests classification of the current inputs stored on the server.
+        """
         if self.clientSocket:
             self.clientSocket.send(
                 "classify".encode()
@@ -97,8 +156,10 @@ class TCPClient:
                 "No active connection. Please use 'open <address>' to connect."
             )
 
-    # Function to shut down the server
     def handleShutdown(self):
+        """
+        Sends a command to shut down the server and closes the client connection.
+        """
         if self.clientSocket:
             self.clientSocket.send(
                 "shutdown".encode()
@@ -114,8 +175,10 @@ class TCPClient:
                 "No active connection. Please use 'open <address>' to connect."
             )
 
-    # Function to quit the client and close any open connection
     def handleQuit(self):
+        """
+        Sends a quit command to the server and closes the client connection.
+        """
         if self.clientSocket:
             self.clientSocket.send("quit".encode())  # Send quit command to server
             print("Closing connection.")
@@ -123,10 +186,12 @@ class TCPClient:
             self.clientSocket = None
         print("Goodbye!")  # Message displayed when client quits
 
-    # Main loop to manage user commands
     def mainFunction(self):
+        """
+        Main loop to interact with the user and manage commands. Provides available commands, handles input, and executes commands.
+        """
         while True:
-            print("\n================================================")
+            print("================================================")
             print(
                 "Available commands:\n"
                 " - OPEN <address>\n"

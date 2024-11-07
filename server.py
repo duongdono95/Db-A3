@@ -1,12 +1,34 @@
+"""
+This module provides a multithreaded TCP server for handling client connections and classifying Iris flower data using a neural network model.
+The server accepts a set of commands from clients to input, clear, classify, and return Iris flower measurements and classifications.
+
+Classes:
+    ClientHandler: Handles a single client connection, allowing clients to input flower measurements, request classifications, and retrieve data.
+    Server: Manages server initialization, starts listening for incoming connections, and shuts down the server.
+
+Modules:
+    socket: Provides access to the BSD socket interface for communication between the server and clients.
+    threading: Supports multithreading to allow handling of multiple clients concurrently.
+
+Constants:
+    commands (List[str]): List of valid command strings that the server can recognize.
+    VARIABLE_RANGES (dict): Defines acceptable ranges for each measurement in the Iris flower dataset.
+
+Classes:
+    ClientHandler: Thread-based handler for client connections.
+    Server: Main server class to start, run, and shut down the server.
+
+"""
+
 import socket
 import threading
 
-from IrisANN.TIris import TIris  # Import the Iris classification model
+from IrisANN.TIris import TIris
 
-# List of valid command strings
+# List of valid command strings the server recognizes and processes
 commands = ["close", "input", "clear", "classify", "return", "quit", "shutdown"]
 
-# Acceptable ranges for each iris flower variable
+# Acceptable measurement ranges for Iris flower variables
 VARIABLE_RANGES = {
     "sepallength": (4.3, 7.9),
     "sepalwidth": (2.0, 4.4),
@@ -15,36 +37,61 @@ VARIABLE_RANGES = {
 }
 
 
-# Class to handle each client connection
 class ClientHandler(threading.Thread):
+    """
+    Handles a single client connection and processes commands such as input, classify, clear, and return.
+
+    Attributes:
+        connection (socket.socket): The client connection socket.
+        address (tuple): The client's address (IP, port).
+        server (Server): A reference to the server for managing server-wide operations.
+        shutdown_func (function): A function to trigger server shutdown.
+        inputs (dict): Stores original and normalized values of Iris measurements for the client.
+        outputs (list): Holds the model's classification result.
+        model (TIris): An instance of the Iris classification model.
+
+    Methods:
+        run(): Listens for commands from the client and delegates processing to specific handlers.
+        handleInput(command): Processes 'input' commands to store and normalize client-provided values.
+        handleReturn(command): Processes 'return' commands to retrieve input/output data.
+        handleClassify(): Processes 'classify' commands to perform classification on provided input data.
+        handleClear(): Resets the client's inputs and outputs.
+        handleClose(): Closes the connection with the client.
+        handleQuit(): Ends the client's session with a quit message.
+        handleShutdown(): Shuts down the server upon client request.
+    """
+
     def __init__(self, connection, address, server, shutdown_func):
         super().__init__()
-        self.connection = connection  # Connection object for the client
-        self.address = address  # Client's address
-        self.server = server  # Reference to the server
-        self.shutdown_func = shutdown_func  # Function to trigger server shutdown
-        # Dictionary to hold input data and normalized values for each variable
+        self.connection = connection
+        self.address = address
+        self.server = server
+        self.shutdown_func = shutdown_func
         self.inputs = {
             "sepallength": {"original": None, "normalized": None},
             "sepalwidth": {"original": None, "normalized": None},
             "petallength": {"original": None, "normalized": None},
             "petalwidth": {"original": None, "normalized": None},
         }
-        self.outputs = None  # Placeholder for model classification results
-        self.model = TIris()  # Instance of the Iris classification model
+        self.outputs = None
+        self.model = TIris()
 
-    # Main method to handle client connection
     def run(self):
+        """
+        Main method to handle client communication. Listens for commands, processes each command, and handles exceptions.
+        """
         print(f"server: got connection from client {self.address[0]}")
-        self.connection.send("Server is ready...".encode())
+        self.connection.send("Server is ready...\nWelcome to the Iris Server".encode())
 
         while True:
             try:
-                # Receive and process commands from the client
                 command = self.connection.recv(1024).decode().strip().lower()
+                print("================================")
+                print(f"Client: Requested to {command}")
+                print("================================")
                 if not command:
                     break
-                # Handle different commands based on the command string
+                # Command dispatch based on received command string
                 if command.startswith("input"):
                     self.handleInput(command)
                 elif command.startswith("return"):
@@ -72,8 +119,13 @@ class ClientHandler(threading.Thread):
         self.connection.close()
         print(f"Connection with client {self.address[0]} closed.")
 
-    # Handle the 'input' command, which provides variable values
     def handleInput(self, command):
+        """
+        Processes 'input' commands to receive a value for a specific variable, normalize it, and store it.
+
+        Parameters:
+            command (str): The command string received from the client.
+        """
         try:
             _, var_name, value_str = command.split(maxsplit=2)
             if var_name not in VARIABLE_RANGES:
@@ -81,9 +133,8 @@ class ClientHandler(threading.Thread):
                 return
 
             try:
-                value = float(value_str)  # Convert the value to float
+                value = float(value_str)
                 min_val, max_val = VARIABLE_RANGES[var_name]
-                # Check if the value is within the acceptable range
                 if min_val <= value <= max_val:
                     normalized_value = (value - min_val) / (max_val - min_val)
                     self.inputs[var_name] = {
@@ -100,8 +151,13 @@ class ClientHandler(threading.Thread):
         except ValueError:
             self.connection.send("400 Error: Invalid input format.\n".encode())
 
-    # Handle the 'return' command, which returns data to the client
     def handleReturn(self, command):
+        """
+        Processes 'return' commands to provide input/output data to the client.
+
+        Parameters:
+            command (str): The command string received from the client.
+        """
         try:
             _, option = command.split(maxsplit=1)
             if option == "inputs":
@@ -116,30 +172,25 @@ class ClientHandler(threading.Thread):
         except ValueError:
             self.connection.send("400 Error: Invalid return command format.\n".encode())
 
-    # Handle the 'classify' command to classify the Iris based on input data
     def handleClassify(self):
-        # Prepare an input vector for classification
-        input_vector = [
-            self.inputs["sepallength"]["normalized"],
-            self.inputs["sepalwidth"]["normalized"],
-            self.inputs["petallength"]["normalized"],
-            self.inputs["petalwidth"]["normalized"],
-        ]
-        # Ensure all inputs are provided
+        """
+        Classifies the Iris flower based on the normalized input data provided by the client.
+        """
+        input_vector = [self.inputs[var]["normalized"] for var in self.inputs]
         if any(v is None for v in input_vector):
             self.connection.send(
                 "400 Error: Insufficient input values for classification.\n".encode()
             )
             return
 
-        # Get classification results from the model
         self.outputs = self.model.Recall(input_vector)
         print("classified output:", self.outputs)
         self.connection.send("Classification complete".encode())
 
-    # Handle the 'clear' command to reset inputs and outputs
     def handleClear(self):
-        # Reset input and output values to None
+        """
+        Clears all inputs and outputs for the current client session.
+        """
         self.inputs = {
             key: {"original": None, "normalized": None} for key in self.inputs
         }
@@ -147,15 +198,25 @@ class ClientHandler(threading.Thread):
         self.connection.send("All input and output values have been cleared.".encode())
         print("Server: Cleared all inputs and outputs for the client.")
 
-    # Format input data to return to the client
     def formatInputs(self):
+        """
+        Formats and returns the original input values for each variable.
+
+        Returns:
+            str: A formatted string with each variable's original value.
+        """
         inputs_set = {k: v for k, v in self.inputs.items() if v["original"] is not None}
         if not inputs_set:
             return "400 Error: No input values set.\n"
         return " ".join([f"{k} {v['original']}" for k, v in inputs_set.items()])
 
-    # Format output data to return to the client
     def formatOutputs(self):
+        """
+        Formats and returns the classification outputs.
+
+        Returns:
+            str: A formatted string with the classification probability for each species.
+        """
         if not self.outputs:
             return "400 Error: No output values set.\n"
         species = ["IrisSetosa", "IrisVersicolor", "IrisVirginica"]
@@ -163,8 +224,13 @@ class ClientHandler(threading.Thread):
             [f"{species[i]} {self.outputs[i]:.5f}" for i in range(len(species))]
         )
 
-    # Classify and return the Iris species as a string
     def classifyIris(self):
+        """
+        Identifies and returns the species with the highest probability from the classification outputs.
+
+        Returns:
+            str: The identified species of the Iris flower.
+        """
         if not self.outputs:
             return "400 Error: No output values set.\n"
         species = ["Iris setosa", "Iris versicolor", "Iris virginica"]
@@ -172,8 +238,10 @@ class ClientHandler(threading.Thread):
         print(f"Classification: {classification}")
         return f"Classification: {classification}"
 
-    # Handle the 'close' command to end the client connection
     def handleClose(self):
+        """
+        Ends the client connection by resetting inputs/outputs and notifying the client.
+        """
         print(f"{self.address[0]} requested to close connection.")
         self.inputs = {
             key: {"original": None, "normalized": None} for key in self.inputs
@@ -181,28 +249,48 @@ class ClientHandler(threading.Thread):
         self.outputs = None
         self.connection.send("200 OK".encode())
 
-    # Handle the 'quit' command, indicating the client wants to disconnect
     def handleQuit(self):
+        """
+        Disconnects the client from the server with a confirmation message.
+        """
         print(f"{self.address[0]} requested to quit. Closing connection.")
         self.connection.send("200 OK\nConnection closed.".encode())
 
-    # Handle the 'shutdown' command to stop the server
     def handleShutdown(self):
+        """
+        Shuts down the server, closing all connections and notifying clients.
+        """
         self.connection.send("200 OK\nServer is shutting down...\n".encode())
         print("Shutdown command received. Server is shutting down.")
         self.shutdown_func()
         self.connection.close()
 
 
-# Main server class to handle incoming connections
 class Server:
+    """
+    Main server class to handle incoming client connections, instantiate client handlers, and manage server shutdown.
+
+    Attributes:
+        host (str): The server's hostname or IP address.
+        port (int): The server's port number.
+        server_socket (socket.socket): The main server socket for listening to incoming connections.
+
+    Methods:
+        start(): Binds the socket, starts listening for incoming connections, and creates a new ClientHandler for each connection.
+        shutdownServer(): Closes the server socket and stops accepting new connections.
+        stop(): Stops the server.
+    """
+
     def __init__(self, host, port):
         self.host = host
         self.port = port
-        self.server_socket = None  # Server's socket object
+        self.server_socket = None
 
-    # Start the server and accept incoming connections
     def start(self):
+        """
+        Starts the server, binds the host and port, and listens for incoming connections.
+        Each client connection is handled in a separate thread.
+        """
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind((self.host, self.port))
@@ -215,7 +303,6 @@ class Server:
         while True:
             try:
                 connection, address = self.server_socket.accept()
-                # Start a new thread to handle the client
                 client_handler = ClientHandler(
                     connection, address, self, self.shutdownServer
                 )
@@ -224,14 +311,18 @@ class Server:
                 break
         print("Server has been shut down.")
 
-    # Shutdown the server
     def shutdownServer(self):
+        """
+        Initiates server shutdown by closing the main socket and stopping connections.
+        """
         print("Shutting down the server...")
         if self.server_socket:
             self.server_socket.close()
 
-    # Stop the server
     def stop(self):
+        """
+        Stops the server by closing the server socket.
+        """
         if self.server_socket:
             self.server_socket.close()
 
